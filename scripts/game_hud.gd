@@ -1,8 +1,17 @@
-# Script: game_hud.gd — displays health, depth, and stone counter on screen
+# Script: game_hud.gd — displays VITALS bar, depth, and stone counter on screen
 extends CanvasLayer
 
-# references to HUD elements
-var health_container: HBoxContainer = null
+# VITALS bar references
+var vitals_label: Label = null
+var health_bar_bg: ColorRect = null
+var health_bar_fill: ColorRect = null
+const HEALTH_BAR_WIDTH: float = 180.0
+const HEALTH_BAR_HEIGHT: float = 14.0
+# pulse state for low-health warning
+var pulse_timer: float = 0.0
+var pulse_state: bool = false
+
+# other HUD references
 var depth_label: Label = null
 var stone_label: Label = null
 var message_label: Label = null
@@ -14,25 +23,54 @@ const MAX_DEPTH_DISPLAY: float = 60.0
 
 func _ready() -> void:
 	# build the HUD layout
-	_create_health_display()
+	_create_vitals_bar()
 	_create_stone_counter()
 	_create_depth_label()
 	_create_depth_bar()
 	_create_message_display()
 
-# create the row of heart squares at the top left
-func _create_health_display() -> void:
-	health_container = HBoxContainer.new()
-	health_container.position = Vector2(20, 20)
-	health_container.add_theme_constant_override("separation", 6)
-	add_child(health_container)
-	# start with 5 hearts
-	update_health(5)
+# create the VITALS health bar in the top-left corner
+func _create_vitals_bar() -> void:
+	vitals_label = Label.new()
+	vitals_label.position = Vector2(16, 14)
+	vitals_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
+	vitals_label.add_theme_font_size_override("font_size", 12)
+	vitals_label.text = "VITALS"
+	add_child(vitals_label)
+	
+	# dark background strip
+	health_bar_bg = ColorRect.new()
+	health_bar_bg.position = Vector2(16, 30)
+	health_bar_bg.size = Vector2(HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT)
+	health_bar_bg.color = Color(0.15, 0.05, 0.05, 0.85)
+	add_child(health_bar_bg)
+	
+	# red fill bar — shrinks left to right as health falls
+	health_bar_fill = ColorRect.new()
+	health_bar_fill.position = Vector2(16, 30)
+	health_bar_fill.size = Vector2(HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT)
+	health_bar_fill.color = Color(1.0, 0.23, 0.23)  # #FF3B3B
+	add_child(health_bar_fill)
 
-# create the sacred stone counter
+func _process(delta: float) -> void:
+	# pulse the health bar when below 25 % health
+	if health_bar_fill == null:
+		return
+	var ratio: float = health_bar_fill.size.x / HEALTH_BAR_WIDTH
+	if ratio < 0.25:
+		pulse_timer += delta
+		if pulse_timer >= 0.35:
+			pulse_timer = 0.0
+			pulse_state = !pulse_state
+		health_bar_fill.color = Color(1.0, 0.23, 0.23) if not pulse_state else Color(0.55, 0.05, 0.05)
+	else:
+		# reset to normal red when health is OK
+		health_bar_fill.color = Color(1.0, 0.23, 0.23)
+
+# create the sacred stone counter — now positioned below the VITALS bar
 func _create_stone_counter() -> void:
 	stone_label = Label.new()
-	stone_label.position = Vector2(20, 55)
+	stone_label.position = Vector2(16, 52)
 	stone_label.add_theme_color_override("font_color", Color(0.0, 0.9, 0.9))
 	stone_label.add_theme_font_size_override("font_size", 18)
 	stone_label.text = "Sacred Stones: 0/7"
@@ -41,7 +79,7 @@ func _create_stone_counter() -> void:
 # create the depth counter text
 func _create_depth_label() -> void:
 	depth_label = Label.new()
-	depth_label.position = Vector2(20, 80)
+	depth_label.position = Vector2(16, 78)
 	depth_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.85))
 	depth_label.add_theme_font_size_override("font_size", 16)
 	depth_label.text = "Depth: 0 blocks"
@@ -84,20 +122,12 @@ func _create_message_display() -> void:
 	message_label.visible = false
 	add_child(message_label)
 
-# update the health hearts display
-func update_health(current_health: int) -> void:
-	# clear old hearts
-	for child: Node in health_container.get_children():
-		child.queue_free()
-	# draw new hearts as red/gray squares
-	for i: int in range(5):
-		var heart: ColorRect = ColorRect.new()
-		heart.custom_minimum_size = Vector2(20, 20)
-		if i < current_health:
-			heart.color = Color(0.9, 0.15, 0.15)
-		else:
-			heart.color = Color(0.3, 0.3, 0.3, 0.5)
-		health_container.add_child(heart)
+# update_health — accepts 0-100 value and resizes the VITALS bar fill proportionally
+func update_health(current_hp: int, max_hp: int = 100) -> void:
+	if health_bar_fill == null:
+		return
+	var ratio: float = clampf(float(current_hp) / float(max_hp), 0.0, 1.0)
+	health_bar_fill.size.x = HEALTH_BAR_WIDTH * ratio
 
 # update the sacred stone counter
 func update_stones(collected: int) -> void:

@@ -23,6 +23,12 @@ var naga_script: GDScript = preload("res://scripts/naga.gd")
 var firefly_script: GDScript = preload("res://scripts/bhoot_firefly.gd")
 var stone_script: GDScript = preload("res://scripts/sacred_stone.gd")
 var particle_script: GDScript = preload("res://scripts/mine_particles.gd")
+var zombie_scene: PackedScene = preload("res://scenes/zombie.tscn")
+var creeper_scene: PackedScene = preload("res://scenes/creeper.tscn")
+
+# world-space position of the player spawn point (set after _spawn_explorer)
+var player_spawn_world_pos: Vector2 = Vector2.ZERO
+const ENEMY_SPAWN_EXCLUSION_PX: float = 300.0
 
 # audio placeholders
 var win_sound: AudioStreamPlayer = null
@@ -145,6 +151,8 @@ func _spawn_explorer() -> void:
 		spawn_col * CELL_SIZE + CELL_SIZE / 2,
 		spawn_row * CELL_SIZE
 	)
+	# record spawn position so enemy spawner can maintain exclusion zone
+	player_spawn_world_pos = explorer.position
 	explorer.game_controller = self
 	explorer.add_to_group("explorer")
 	add_child(explorer)
@@ -277,20 +285,28 @@ func _spawn_enemies() -> void:
 	# spawn 8-12 yeti cubs in the dirt layer (rows 10-25)
 	var yeti_count: int = randi_range(8, 12)
 	for i: int in range(yeti_count):
-		_spawn_enemy_in_range(yeti_script, 10, 25)
+		_spawn_scripted_enemy_in_range(yeti_script, 10, 25)
 	
 	# spawn 8-12 nagas in the stone layer (rows 25-40)
 	var naga_count: int = randi_range(8, 12)
 	for i: int in range(naga_count):
-		_spawn_enemy_in_range(naga_script, 25, 40)
+		_spawn_scripted_enemy_in_range(naga_script, 25, 40)
 	
 	# spawn 8-12 bhoot fireflies in the deep layer (rows 40+)
 	var firefly_count: int = randi_range(8, 12)
 	for i: int in range(firefly_count):
-		_spawn_enemy_in_range(firefly_script, 40, terrain.WORLD_HEIGHT - 3)
+		_spawn_scripted_enemy_in_range(firefly_script, 40, terrain.WORLD_HEIGHT - 3)
+	
+	# spawn 12 zombies spread across all underground rows
+	for i: int in range(12):
+		_spawn_scene_enemy_in_range(zombie_scene, terrain.SURFACE_ROW + 2, terrain.WORLD_HEIGHT - 4)
+	
+	# spawn 6 creepers spread across all underground rows
+	for i: int in range(6):
+		_spawn_scene_enemy_in_range(creeper_scene, terrain.SURFACE_ROW + 2, terrain.WORLD_HEIGHT - 4)
 
-# spawn a single enemy in an air pocket within the given row range
-func _spawn_enemy_in_range(enemy_script: GDScript, min_row: int, max_row: int) -> void:
+# spawn a script-based enemy (old folklore enemies) within a row range
+func _spawn_scripted_enemy_in_range(enemy_script: GDScript, min_row: int, max_row: int) -> void:
 	var attempts: int = 0
 	while attempts < 100:
 		attempts += 1
@@ -300,20 +316,49 @@ func _spawn_enemy_in_range(enemy_script: GDScript, min_row: int, max_row: int) -
 		if terrain.grid[row][col] == terrain.CellType.AIR:
 			var below_row: int = row + 1
 			if below_row < terrain.WORLD_HEIGHT and terrain.is_solid(below_row, col):
-				var enemy: CharacterBody2D = CharacterBody2D.new()
-				enemy.set_script(enemy_script)
-				enemy.position = Vector2(
+				var world_pos: Vector2 = Vector2(
 					col * CELL_SIZE + CELL_SIZE / 2,
 					row * CELL_SIZE + CELL_SIZE / 2
 				)
+				# enforce 300px exclusion from player spawn
+				if world_pos.distance_to(player_spawn_world_pos) < ENEMY_SPAWN_EXCLUSION_PX:
+					continue
+				var enemy: CharacterBody2D = CharacterBody2D.new()
+				enemy.set_script(enemy_script)
+				enemy.position = world_pos
 				enemy.collision_layer = 4
 				enemy.collision_mask = 1
 				add_child(enemy)
 				return
 
+# spawn a scene-based enemy (zombie, creeper) within a row range, respecting exclusion zone
+func _spawn_scene_enemy_in_range(scene: PackedScene, min_row: int, max_row: int) -> void:
+	var attempts: int = 0
+	while attempts < 150:
+		attempts += 1
+		var row: int = randi_range(min_row, max_row)
+		var col: int = randi_range(2, terrain.WORLD_WIDTH - 3)
+		# valid position: cell is air, cell below is solid
+		if terrain.grid[row][col] != terrain.CellType.AIR:
+			continue
+		var below_row: int = row + 1
+		if below_row >= terrain.WORLD_HEIGHT or not terrain.is_solid(below_row, col):
+			continue
+		var world_pos: Vector2 = Vector2(
+			col * CELL_SIZE + CELL_SIZE / 2,
+			row * CELL_SIZE + CELL_SIZE / 2
+		)
+		# enforce 300px exclusion zone around player spawn
+		if world_pos.distance_to(player_spawn_world_pos) < ENEMY_SPAWN_EXCLUSION_PX:
+			continue
+		var enemy: Node = scene.instantiate()
+		enemy.position = world_pos
+		add_child(enemy)
+		return
+
 # called by explorer when HUD needs updating
 func update_hud() -> void:
-	hud.update_health(explorer.current_health)
+	hud.update_health(explorer.current_health, explorer.max_health)
 	hud.update_stones(explorer.sacred_stones_collected)
 
 # show message telling player to return to surface

@@ -6,9 +6,10 @@ const MOVE_SPEED: float = 150.0
 const JUMP_FORCE: float = -320.0
 const GRAVITY: float = 600.0
 
-# health system
-const MAX_HEALTH: int = 5
+# health system — 100-point scale for environmental damage
+const MAX_HEALTH: int = 100
 var current_health: int = MAX_HEALTH
+var max_health: int = MAX_HEALTH
 var is_invincible: bool = false
 var invincibility_timer: float = 0.0
 const INVINCIBILITY_DURATION: float = 1.0
@@ -171,7 +172,7 @@ func _physics_process(delta: float) -> void:
 			is_invincible = false
 			body_visuals.visible = true
 
-# called when the player touches an enemy
+# take_damage — used for environmental hazards (lava, fall, etc.). Enemies call die() instead.
 func take_damage(amount: int) -> void:
 	if is_invincible or is_dead:
 		return
@@ -186,11 +187,17 @@ func take_damage(amount: int) -> void:
 	if current_health <= 0:
 		current_health = 0
 		_die()
-	# tell the HUD to update
+	# tell the HUD to update health bar
 	if game_controller:
 		game_controller.update_hud()
 
-# handle player death
+# public die() — called by enemies for instant death, bypasses health entirely
+func die() -> void:
+	if is_dead:
+		return
+	_die()
+
+# handle player death — stops movement and shows the death screen
 func _die() -> void:
 	is_dead = true
 	body_visuals.visible = true

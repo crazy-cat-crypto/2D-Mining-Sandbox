@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/creeper.gd" id="1_creeper"]
+
+[node name="Creeper" type="StaticBody2D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1_creeper")
