@@ -1,149 +1,166 @@
-# Script: end_screen.gd — handles both WIN and DEATH end states
-# Data is passed via SceneTree metadata set by main_game.gd before scene change
+# Script: end_screen.gd — Win/Death screens for Minor Dai
 extends Control
 
+var did_win: bool = false
+var shards: int = 0
+var depth: int = 0
+
 func _ready() -> void:
-	# read data passed via tree metadata
-	var did_win: bool = get_tree().get_meta("end_won", false)
-	var shards: int = get_tree().get_meta("end_shards", 0)
-	var depth: int = get_tree().get_meta("end_depth", 0)
+	# Get data from GameManager
+	did_win = GameManager.shards_collected >= 10
+	shards = GameManager.shards_collected
+	depth = int(GameManager.max_depth_reached)
 	setup(did_win, shards, depth)
 
 # build the appropriate screen based on outcome
-func setup(did_win: bool, shards: int, depth: int) -> void:
-	if did_win:
-		_build_win_screen(shards, depth)
+func setup(win_state: bool, shard_count: int, depth_reached: int) -> void:
+	if win_state:
+		_show_win(shard_count, depth_reached)
 	else:
-		_build_death_screen(shards, depth)
+		_show_death(shard_count, depth_reached)
 
-# ─── WIN SCREEN ───────────────────────────────────────────────────────────────
-func _build_win_screen(shards: int, depth: int) -> void:
-	# deep blue-black background
-	var bg: ColorRect = ColorRect.new()
+# ─── WIN SCREEN ─── (Section 6 specs)
+func _show_win(shard_count: int, depth_reached: int) -> void:
+	# Deep blue-black background
+	var bg = ColorRect.new()
 	bg.set_anchors_preset(PRESET_FULL_RECT)
-	bg.color = Color(0.008, 0.031, 0.094)  # #020818
+	bg.color = Color("#020818")
 	add_child(bg)
 
-	# animated light rays rising from bottom
-	_spawn_light_rays()
+	# Animated "MINOR DAI WINS!" title (dropping letters like main menu)
+	await _create_animated_win_title()
+	
+	# Subtitle
+	var subtitle = Label.new()
+	subtitle.text = "You found the echoes. The mountain remembers your name."
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.size = Vector2(1280.0, 40.0)
+	subtitle.position = Vector2(0.0, 320.0)
+	subtitle.add_theme_font_size_override("font_size", 18)
+	subtitle.add_theme_color_override("font_color", Color.WHITE)
+	add_child(subtitle)
 
-	# large gold title
-	var title: Label = Label.new()
-	title.text = "THE SURFACE STIRS"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size = Vector2(1280.0, 100.0)
-	title.position = Vector2(0.0, 200.0)
-	title.add_theme_font_size_override("font_size", 52)
-	title.add_theme_color_override("font_color", Color(1.0, 0.843, 0.0))  # #FFD700
-	add_child(title)
-
-	# flavour text
-	var sub: Label = Label.new()
-	sub.text = "You recovered the echoes. The world remembers your name."
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.size = Vector2(1280.0, 40.0)
-	sub.position = Vector2(0.0, 300.0)
-	sub.add_theme_font_size_override("font_size", 18)
-	sub.add_theme_color_override("font_color", Color.WHITE)
-	add_child(sub)
-
-	# stats
-	var stats: Label = Label.new()
-	stats.text = "SHARDS RECOVERED: %d/10\nDEEPEST POINT: %dm" % [shards, depth]
+	# Stats
+	var stats = Label.new()
+	stats.text = "SHARDS RECOVERED: %d/10\nDEEPEST POINT: %dm" % [shard_count, depth_reached]
 	stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stats.size = Vector2(1280.0, 80.0)
-	stats.position = Vector2(0.0, 370.0)
+	stats.position = Vector2(0.0, 380.0)
 	stats.add_theme_font_size_override("font_size", 22)
-	stats.add_theme_color_override("font_color", Color(0.85, 0.85, 0.95))
+	stats.add_theme_color_override("font_color", Color("#AAAAAA"))
 	add_child(stats)
 
-	# restart button
-	_add_button("DESCEND AGAIN", Vector2(500.0, 490.0), Color(1.0, 0.843, 0.0))
+	# Button
+	_add_button("DESCEND AGAIN", Vector2(500.0, 490.0), Color("#FFD700"))
 
-# spawn 5 ColorRect strips that rise from the bottom via looping tweens
-func _spawn_light_rays() -> void:
-	for i: int in range(5):
-		var ray: ColorRect = ColorRect.new()
-		var ray_width: float = randf_range(30.0, 80.0)
-		var ray_x: float = randf_range(80.0, 1200.0)
-		ray.size = Vector2(ray_width, 720.0)
-		ray.position = Vector2(ray_x, 720.0)
-		ray.color = Color(0.4, 0.8, 1.0, 0.06)
-		add_child(ray)
-		# loop: slide up, teleport back, repeat
-		var duration: float = randf_range(2.5, 4.5)
-		var tween: Tween = create_tween().set_loops()
-		tween.tween_property(ray, "position:y", -720.0, duration)
-		tween.tween_property(ray, "position:y", 720.0, 0.0)
+# Create animated falling title letters
+func _create_animated_win_title() -> void:
+	const WIN_TITLE = "MINOR DAI WINS!"
+	const COLORS = [Color("#FFD700"), Color("#FFB700"), Color("#FF8C00")]
+	
+	var letter_spacing = 45
+	var start_x = (1280 - (WIN_TITLE.length() * letter_spacing)) / 2
+	
+	for i in range(WIN_TITLE.length()):
+		var letter = Label.new()
+		letter.text = WIN_TITLE[i]
+		letter.add_theme_font_size_override("font_size", 56)
+		letter.add_theme_color_override("font_color", COLORS[i % COLORS.size()])
+		letter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		letter.size = Vector2(letter_spacing, 80)
+		letter.position = Vector2(start_x + i * letter_spacing, -100)  # Start off-screen
+		add_child(letter)
+		
+		# Animate letter falling into place
+		await get_tree().create_timer(i * 0.06).timeout
+		var tween = create_tween()
+		tween.tween_property(letter, "position:y", 220, 0.4)
+		tween.set_trans(Tween.TRANS_BACK)
+		tween.set_ease(Tween.EASE_OUT)
 
-# ─── DEATH SCREEN ─────────────────────────────────────────────────────────────
-func _build_death_screen(shards: int, depth: int) -> void:
-	# pure black background
-	var bg: ColorRect = ColorRect.new()
+# ─── DEATH SCREEN ─── (Section 6 specs)
+func _show_death(shard_count: int, depth_reached: int) -> void:
+	# Black background
+	var bg = ColorRect.new()
 	bg.set_anchors_preset(PRESET_FULL_RECT)
-	bg.color = Color(0.0, 0.0, 0.0)
+	bg.color = Color("#000000")
 	add_child(bg)
 
-	# flickering glitch lines
-	_spawn_glitch_lines()
+	# Glitch bars
+	_spawn_glitch_bars()
 
-	# large red title
-	var title: Label = Label.new()
-	title.text = "SIGNAL LOST"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size = Vector2(1280.0, 100.0)
-	title.position = Vector2(0.0, 210.0)
-	title.add_theme_font_size_override("font_size", 52)
-	title.add_theme_color_override("font_color", Color(1.0, 0.133, 0.133))  # #FF2222
-	add_child(title)
+	# Animated "SIGNAL LOST" title
+	await _create_glitch_death_title()
 
-	# flavour text
-	var sub: Label = Label.new()
-	sub.text = "Your echo fades into the stone. The depths claim another."
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.size = Vector2(1280.0, 40.0)
-	sub.position = Vector2(0.0, 310.0)
-	sub.add_theme_font_size_override("font_size", 16)
-	sub.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))  # #666666
-	add_child(sub)
+	# Subtitle  
+	var subtitle = Label.new()
+	subtitle.text = "Your echo fades. The stone remembers nothing."
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.size = Vector2(1280.0, 40.0)
+	subtitle.position = Vector2(0.0, 320.0)
+	subtitle.add_theme_font_size_override("font_size", 16)
+	subtitle.add_theme_color_override("font_color", Color("#666666"))
+	add_child(subtitle)
 
-	# stats
-	var stats: Label = Label.new()
-	stats.text = "SHARDS BEFORE SILENCE: %d/10\nDEPTH REACHED: %dm" % [shards, depth]
+	# Stats
+	var stats = Label.new()
+	stats.text = "SHARDS BEFORE SILENCE: %d/10\nDEPTH REACHED: %dm" % [shard_count, depth_reached]
 	stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stats.size = Vector2(1280.0, 80.0)
 	stats.position = Vector2(0.0, 380.0)
 	stats.add_theme_font_size_override("font_size", 20)
-	stats.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	stats.add_theme_color_override("font_color", Color("#888888"))
 	add_child(stats)
 
-	# restart button
-	_add_button("TRY AGAIN", Vector2(500.0, 490.0), Color(1.0, 0.133, 0.133))
+	# Button
+	_add_button("TRY AGAIN", Vector2(500.0, 490.0), Color("#FF2222"))
 
-# spawn 4 horizontal grey bars that flicker rapidly to simulate static
-func _spawn_glitch_lines() -> void:
-	var lines: Array = []
-	for i: int in range(4):
-		var line: ColorRect = ColorRect.new()
-		line.size = Vector2(1280.0, float(randi_range(2, 5)))
-		line.position = Vector2(0.0, float(randi_range(50, 660)))
-		line.color = Color(0.4, 0.4, 0.4, 0.75)
-		add_child(line)
-		lines.append(line)
-	# timer that toggles all line visibility every 0.05 seconds
-	var flicker: Timer = Timer.new()
-	flicker.wait_time = 0.05
-	flicker.autostart = true
-	flicker.timeout.connect(func() -> void:
-		for line: ColorRect in lines:
-			line.visible = !line.visible
-	)
-	add_child(flicker)
+# Create glitchy animated death title
+func _create_glitch_death_title() -> void:
+	const DEATH_TITLE = "SIGNAL LOST"
+	
+	var letter_spacing = 60
+	var start_x = (1280 - (DEATH_TITLE.length() * letter_spacing)) / 2
+	
+	for i in range(DEATH_TITLE.length()):
+		var letter = Label.new()
+		letter.text = DEATH_TITLE[i]
+		letter.add_theme_font_size_override("font_size", 56)
+		letter.add_theme_color_override("font_color", Color("#FF2222"))
+		letter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		letter.size = Vector2(letter_spacing, 80)
+		letter.position = Vector2(start_x + i * letter_spacing, 220)
+		
+		# Add glitch offset initially
+		letter.position.x += randf_range(-10, 10)
+		letter.position.y += randf_range(-5, 5)
+		add_child(letter)
+		
+		# Wait a bit, then snap to proper position
+		await get_tree().create_timer(i * 0.08 + randf_range(0.1, 0.3)).timeout
+		var tween = create_tween()
+		tween.tween_property(letter, "position", Vector2(start_x + i * letter_spacing, 220), 0.1)
 
-# shared button builder (styled with colored border)
+# 3 horizontal grey glitch bars that randomly reposition
+func _spawn_glitch_bars() -> void:
+	for i in range(3):
+		var bar = ColorRect.new()
+		bar.size = Vector2(1280, randi_range(3, 8))
+		bar.position = Vector2(0, randf_range(100, 600))
+		bar.color = Color("#666666")
+		add_child(bar)
+		
+		# Timer to reposition every 0.06 seconds
+		var timer = Timer.new()
+		timer.wait_time = 0.06
+		timer.autostart = true
+		timer.timeout.connect(func(): bar.position.y = randf_range(100, 600))
+		add_child(timer)
+
+# Shared button builder
 func _add_button(label_text: String, pos: Vector2, accent: Color) -> void:
-	var style: StyleBoxFlat = StyleBoxFlat.new()
-	style.bg_color = Color(0.06, 0.06, 0.1)
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color("#111122")
 	style.border_color = accent
 	style.border_width_left = 2
 	style.border_width_right = 2
@@ -154,7 +171,7 @@ func _add_button(label_text: String, pos: Vector2, accent: Color) -> void:
 	style.corner_radius_bottom_left = 4
 	style.corner_radius_bottom_right = 4
 
-	var btn: Button = Button.new()
+	var btn = Button.new()
 	btn.text = label_text
 	btn.size = Vector2(280.0, 54.0)
 	btn.position = pos
@@ -167,4 +184,4 @@ func _add_button(label_text: String, pos: Vector2, accent: Color) -> void:
 	add_child(btn)
 
 func _on_restart_pressed() -> void:
-	get_tree().change_scene_to_file("res://scenes/main_game.tscn")
+	GameManager.restart_game()

@@ -1,106 +1,174 @@
-# Script: creeper.gd — stationary enemy that fuses and explodes when player gets close
-extends StaticBody2D
+# Script: creeper.gd — killable creeper enemy with fusing for Minor Dai
+extends CharacterBody2D
 
-# how close the player must be to trigger the fuse (in pixels)
-const TRIGGER_RANGE: float = 150.0
-# how close the player must be to die from the explosion
-const EXPLOSION_RANGE: float = 120.0
-# how long the fuse burns before exploding (seconds)
-const FUSE_DURATION: float = 1.5
-# how fast the flash alternates during fuse
-const FLASH_INTERVAL: float = 0.1
+# Section 3 specs
+var max_health: int = 35
+var health: int = 35
+var detect_range: float = 130.0
+var explode_range: float = 105.0
+var fuse_time: float = 1.4
+var is_fusing: bool = false
+var is_dead: bool = false
 
-# current fuse state
-var fuse_active: bool = false
-var fuse_timer: float = 0.0
-var flash_timer: float = 0.0
-var is_exploded: bool = false
+const GRAVITY: float = 900.0
 
-# colors used for flashing
-const COLOR_IDLE: Color = Color(0.2, 0.85, 0.2, 1.0)
-const COLOR_FLASH: Color = Color(1.0, 1.0, 1.0, 1.0)
+var visual_node: Node2D = null
+var hp_bg: ColorRect = null
+var hp_fill: ColorRect = null
+var hitbox: Area2D = null
 
-var body_rect: ColorRect = null
-
-# this sets up visuals and registers in the enemies group
 func _ready() -> void:
 	add_to_group("enemies")
-	_create_visuals()
+	_create_creeper_visuals()
 
-# creates the bright green rectangle body (placeholder, replace with sprite later)
-func _create_visuals() -> void:
-	body_rect = ColorRect.new()
-	body_rect.size = Vector2(22, 28)
-	body_rect.position = Vector2(-11, -28)
-	body_rect.color = COLOR_IDLE
-	add_child(body_rect)
+# Create creeper appearance with health bar
+func _create_creeper_visuals() -> void:
+	visual_node = Node2D.new()
+	visual_node.name = "Visual"
+	add_child(visual_node)
+	
+	# Body (bright green)
+	var body = ColorRect.new()
+	body.name = "body"
+	body.size = Vector2(16, 22)
+	body.position = Vector2(-8, -22)
+	body.color = Color("#3CB043")
+	visual_node.add_child(body)
+	
+	# Black eyes
+	var eye_l = ColorRect.new()
+	eye_l.name = "eye_l"
+	eye_l.size = Vector2(4, 5)
+	eye_l.position = Vector2(-4, -18)
+	eye_l.color = Color("#111111")
+	visual_node.add_child(eye_l)
+	
+	var eye_r = ColorRect.new()
+	eye_r.name = "eye_r"
+	eye_r.size = Vector2(4, 5)
+	eye_r.position = Vector2(1, -18)
+	eye_r.color = Color("#111111")
+	visual_node.add_child(eye_r)
+	
+	# Mouth
+	var mouth = ColorRect.new()
+	mouth.name = "mouth"
+	mouth.size = Vector2(10, 3)
+	mouth.position = Vector2(-5, -10)
+	mouth.color = Color("#111111")
+	visual_node.add_child(mouth)
+	
+	# Health bar background
+	hp_bg = ColorRect.new()
+	hp_bg.name = "hp_bg"
+	hp_bg.size = Vector2(32, 4)
+	hp_bg.position = Vector2(-16, -35)
+	hp_bg.color = Color("#333333")
+	add_child(hp_bg)
+	
+	# Health bar fill
+	hp_fill = ColorRect.new()
+	hp_fill.name = "hp_fill"
+	hp_fill.size = Vector2(32, 4)
+	hp_fill.position = Vector2(-16, -35)
+	hp_fill.color = Color("#FF3333")
+	add_child(hp_fill)
+	
+	# Physics collision
+	var collision = CollisionShape2D.new()
+	var shape = RectangleShape2D.new()
+	shape.size = Vector2(16, 24)
+	collision.shape = shape
+	collision.position = Vector2(0, -11)
+	add_child(collision)
+	
+	# Hitbox for player contact
+	hitbox = Area2D.new()
+	hitbox.collision_layer = 0
+	hitbox.collision_mask = 2
+	var hitbox_col = CollisionShape2D.new()
+	var hitbox_shape = RectangleShape2D.new()
+	hitbox_shape.size = Vector2(18, 26)
+	hitbox_col.shape = hitbox_shape
+	hitbox_col.position = Vector2(0, -11)
+	hitbox.add_child(hitbox_col)
+	add_child(hitbox)
+	hitbox.body_entered.connect(_on_body_entered)
 
-	# two dark eyes
-	var eye_left: ColorRect = ColorRect.new()
-	eye_left.size = Vector2(4, 4)
-	eye_left.position = Vector2(-8, -22)
-	eye_left.color = Color(0.0, 0.2, 0.0)
-	add_child(eye_left)
-
-	var eye_right: ColorRect = ColorRect.new()
-	eye_right.size = Vector2(4, 4)
-	eye_right.position = Vector2(4, -22)
-	eye_right.color = Color(0.0, 0.2, 0.0)
-	add_child(eye_right)
-
-	# collision shape
-	var col: CollisionShape2D = CollisionShape2D.new()
-	var shape: RectangleShape2D = RectangleShape2D.new()
-	shape.size = Vector2(22, 28)
-	col.shape = shape
-	col.position = Vector2(0, -14)
-	add_child(col)
-
-# this checks player distance every frame and manages fuse/explosion state
 func _process(delta: float) -> void:
-	if is_exploded:
+	if is_dead:
 		return
-	var player: Node2D = _get_player()
-	if player == null:
+	
+	# Update health bar
+	hp_fill.size.x = 32.0 * (float(health) / float(max_health))
+	
+	# Fuse behavior
+	var player = get_tree().get_first_node_in_group("player")
+	if not player: 
 		return
-	var dist: float = global_position.distance_to(player.global_position)
+	var dist = global_position.distance_to(player.global_position)
+	
+	if dist < detect_range and not is_fusing:
+		_start_fuse()
+	elif dist >= detect_range and is_fusing:
+		_cancel_fuse()
 
-	if dist <= TRIGGER_RANGE:
-		# player is close enough — run or maintain fuse
-		if not fuse_active:
-			fuse_active = true
-			fuse_timer = 0.0
-			flash_timer = 0.0
-		fuse_timer += delta
-		flash_timer += delta
-		# alternate between white and green flash
-		if flash_timer >= FLASH_INTERVAL:
-			flash_timer = 0.0
-			if body_rect.color == COLOR_IDLE:
-				body_rect.color = COLOR_FLASH
-			else:
-				body_rect.color = COLOR_IDLE
-		# check if fuse is done — explode
-		if fuse_timer >= FUSE_DURATION:
-			_explode(player, dist)
-	else:
-		# player left range — reset fuse
-		if fuse_active:
-			fuse_active = false
-			fuse_timer = 0.0
-			flash_timer = 0.0
-			body_rect.color = COLOR_IDLE
+func _physics_process(delta: float) -> void:
+	if is_dead:
+		return
+	velocity.y += GRAVITY * delta
+	move_and_slide()
 
-# this triggers the explosion — kills player if close enough and removes self
-func _explode(player: Node2D, dist: float) -> void:
-	is_exploded = true
-	if dist <= EXPLOSION_RANGE and player.has_method("die"):
+func _start_fuse() -> void:
+	is_fusing = true
+	var fuse_timer = get_tree().create_timer(fuse_time)
+	# Flash green/white while fusing
+	_flash_loop()
+	await fuse_timer.timeout
+	if is_fusing and not is_dead:
+		_explode()
+
+func _flash_loop() -> void:
+	while is_fusing and not is_dead:
+		modulate = Color.WHITE
+		await get_tree().create_timer(0.12).timeout
+		modulate = Color(0.24, 0.69, 0.26)
+		await get_tree().create_timer(0.12).timeout
+
+func _cancel_fuse() -> void:
+	is_fusing = false
+	modulate = Color(0.24, 0.69, 0.26)
+
+func _explode() -> void:
+	is_fusing = false
+	is_dead = true
+	var player = get_tree().get_first_node_in_group("player")
+	if player and global_position.distance_to(player.global_position) < explode_range:
 		player.die()
+	
+	# Screen flash
+	var flash = ColorRect.new()
+	flash.color = Color(1, 1, 1, 0.6)
+	flash.size = DisplayServer.window_get_size()
+	get_tree().current_scene.add_child(flash)
+	var t = create_tween()
+	t.tween_property(flash, "modulate:a", 0.0, 0.4)
+	await t.finished
+	flash.queue_free()
 	queue_free()
 
-# this returns the player node from the explorer group
-func _get_player() -> Node2D:
-	var players: Array = get_tree().get_nodes_in_group("explorer")
-	if players.is_empty():
-		return null
-	return players[0] as Node2D
+func take_hit(dmg: int) -> void:
+	if is_dead: 
+		return
+	health -= dmg
+	if health <= 0:
+		is_dead = true
+		is_fusing = false
+		var tween = create_tween()
+		tween.tween_property(self, "scale", Vector2.ZERO, 0.22)
+		await tween.finished
+		queue_free()
+
+func _on_body_entered(body: Node2D) -> void:
+	if body.is_in_group("player"):
+		body.die()
