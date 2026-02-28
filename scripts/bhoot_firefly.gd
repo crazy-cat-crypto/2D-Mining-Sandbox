@@ -13,6 +13,7 @@ var time_alive: float = 0.0
 var start_position: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
+	add_to_group("enemies")
 	start_position = global_position
 	
 	# create the glowing yellow-orange circle (approximated with polygon)
@@ -98,6 +99,12 @@ func _on_body_entered(body: Node2D) -> void:
 			body.velocity.y = -150.0
 		else:
 			body.take_damage(1)
+
+# take damage from player attack
+func take_hit(dmg: int) -> void:
+	health -= dmg
+	if health <= 0:
+		_die()
 
 # remove firefly from scene
 func _die() -> void:

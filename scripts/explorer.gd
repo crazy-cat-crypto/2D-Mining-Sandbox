@@ -27,6 +27,12 @@ var is_dead: bool = false
 
 # references
 var game_controller: Node = null
+var sacred_stones_collected: int = 0
+
+# audio references (linked from scene)
+@onready var mine_sound: AudioStreamPlayer = $MineSound
+@onready var hurt_sound: AudioStreamPlayer = $HurtSound
+@onready var pickup_sound: AudioStreamPlayer = $PickupSound
 
 # visual components - child character design
 var visual_node: Node2D = null

@@ -8,6 +8,7 @@ var direction: float = 1.0
 var health: int = 1
 
 func _ready() -> void:
+	add_to_group("enemies")
 	# create the white rectangle body
 	var body_shape: Polygon2D = Polygon2D.new()
 	body_shape.polygon = PackedVector2Array([
@@ -77,6 +78,12 @@ func _on_body_entered(body: Node2D) -> void:
 		else:
 			# player takes damage
 			body.take_damage(1)
+
+# take damage from player attack
+func take_hit(dmg: int) -> void:
+	health -= dmg
+	if health <= 0:
+		_die()
 
 # remove enemy from scene
 func _die() -> void:

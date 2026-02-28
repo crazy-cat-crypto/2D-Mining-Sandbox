@@ -100,10 +100,10 @@ func _update_depth_display() -> void:
 	depth_label.add_theme_color_override("font_color", Color("#00FFFF").lightened(glow_intensity * 0.3))
 
 # Update shard counter
-func update_shards(collected: int) -> void:
+func update_shards(collected: int, _needed: int = 10) -> void:
 	if shard_label == null:
 		return  
-	shard_label.text = "◆ ECHOES: %d/10" % collected
+	shard_label.text = "◆ ECHOES: %d/%d" % [collected, _needed]
 
 # Bounce effect when shard collected (Section 7)
 func _on_shard_collected(total_shards: int) -> void:

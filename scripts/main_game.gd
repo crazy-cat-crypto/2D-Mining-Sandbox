@@ -216,6 +216,9 @@ func _process(delta: float) -> void:
 		if shake_timer <= 0.0 and camera:
 			camera.offset = Vector2.ZERO
 	
+	# update HUD (health bar, shard count)
+	update_hud()
+	
 	# update hold-mining every frame
 	_handle_mining(delta)
 	
@@ -426,8 +429,7 @@ func _spawn_scene_enemy_in_range(scene: PackedScene, min_row: int, max_row: int)
 
 # called by explorer when HUD needs updating
 func update_hud() -> void:
-	hud.update_health(explorer.current_health, explorer.max_health)
-	hud.update_stones(explorer.sacred_stones_collected)
+	hud.update_health(explorer.current_health, explorer.MAX_HEALTH)
 	hud.update_shards(shards_collected, shards_needed)
 
 # show message telling player to return to surface

@@ -77,8 +77,8 @@ func _build_torch_lights() -> void:
 
 # animated title with falling letters
 func _build_animated_title() -> void:
-	var letter_spacing = 65
-	var start_x = (1280 - (TITLE.length() * letter_spacing)) / 2
+	var letter_spacing: int = 65
+	var start_x: int = (1280 - (TITLE.length() * letter_spacing)) / 2.0 as int
 	
 	for i in range(TITLE.length()):
 		var letter = Label.new()

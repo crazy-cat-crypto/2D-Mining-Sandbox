@@ -12,6 +12,7 @@ var lunge_timer: float = 0.0
 var cooldown_timer: float = 0.0
 
 func _ready() -> void:
+	add_to_group("enemies")
 	# create the green snake body (thin tall rectangle)
 	var body_shape: Polygon2D = Polygon2D.new()
 	body_shape.polygon = PackedVector2Array([
@@ -111,6 +112,12 @@ func _on_body_entered(body: Node2D) -> void:
 		else:
 			# naga deals 2 damage (1.5 hearts rounds up)
 			body.take_damage(2)
+
+# take damage from player attack
+func take_hit(dmg: int) -> void:
+	health -= dmg
+	if health <= 0:
+		_die()
 
 # remove naga from scene
 func _die() -> void:
