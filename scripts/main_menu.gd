@@ -106,7 +106,7 @@ func _build_animated_title() -> void:
 		
 		# Animate letter falling into place with delay
 		var tween = create_tween()
-		tween.tween_delay(i * 0.09)
+		tween.tween_interval(i * 0.09)
 		tween.tween_property(letter, "position:y", 180, 0.6)
 		tween.set_trans(Tween.TRANS_BACK)  
 		tween.set_ease(Tween.EASE_OUT)
