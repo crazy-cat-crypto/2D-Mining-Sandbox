@@ -30,6 +30,23 @@ var creeper_scene: PackedScene = preload("res://scenes/creeper.tscn")
 var player_spawn_world_pos: Vector2 = Vector2.ZERO
 const ENEMY_SPAWN_EXCLUSION_PX: float = 300.0
 
+# echo shard collection tracking (Section 3)
+var shards_collected: int = 0
+const shards_needed: int = 10
+const total_shards: int = 15
+
+# hold-mining state (Section 4)
+var mining_cursor: Node2D = null
+var is_mining: bool = false
+var mining_row: int = -1
+var mining_col: int = -1
+var mine_progress: float = 0.0
+# break times per cell type in seconds (snappy: all under 0.8s)
+const MINE_TIME: Dictionary = { 1: 0.35, 2: 0.55, 3: 0.75 }  # dirt, stone, obsidian
+# screen shake state
+var shake_magnitude: float = 0.0
+var shake_timer: float = 0.0
+
 # audio placeholders
 var win_sound: AudioStreamPlayer = null
 
@@ -51,11 +68,20 @@ func _ready() -> void:
 	# draw the terrain blocks as colored rectangles
 	_draw_terrain()
 	
+	# mark 15 solid tiles as echo shard tiles and give them a cyan glow
+	_place_echo_shards()
+	
 	# spawn the player at the surface
 	_spawn_explorer()
 	
 	# create the HUD
 	_create_hud()
+	
+	# create the mining cursor overlay (drawn in world space)
+	var cursor_script: GDScript = preload("res://scripts/mining_cursor.gd")
+	mining_cursor = Node2D.new()
+	mining_cursor.set_script(cursor_script)
+	add_child(mining_cursor)
 	
 	# spawn sacred stones throughout the underground
 	_spawn_sacred_stones()
@@ -172,62 +198,104 @@ func _process(delta: float) -> void:
 	
 	game_timer += delta
 	
-	# update depth display
+	# update depth display every frame
 	var current_depth: float = (explorer.position.y / CELL_SIZE) - terrain.SURFACE_ROW
 	if current_depth < 0.0:
 		current_depth = 0.0
 	hud.update_depth(current_depth)
 	
-	# handle mining with left click
-	if Input.is_action_just_pressed("mine"):
-		_try_mine()
+	# apply screen shake to the player camera
+	if shake_timer > 0.0:
+		shake_timer -= delta
+		var camera: Camera2D = explorer.get_node_or_null("Camera")
+		if camera:
+			camera.offset = Vector2(
+				randf_range(-shake_magnitude, shake_magnitude),
+				randf_range(-shake_magnitude, shake_magnitude)
+			)
+		if shake_timer <= 0.0 and camera:
+			camera.offset = Vector2.ZERO
+	
+	# update hold-mining every frame
+	_handle_mining(delta)
 	
 	# check win condition — player at surface with all stones
 	if all_stones_collected and explorer.position.y < terrain.SURFACE_ROW * CELL_SIZE:
 		_win_game()
 
-# try to mine the block closest to where the player clicked
-func _try_mine() -> void:
+# this runs every frame and handles hold-to-mine logic with cursor overlay
+func _handle_mining(delta: float) -> void:
 	var mouse_pos: Vector2 = get_global_mouse_position()
-	# convert mouse position to grid coordinates
-	var target_col: int = int(mouse_pos.x / CELL_SIZE)
-	var target_row: int = int(mouse_pos.y / CELL_SIZE)
-	
-	# check if the block is adjacent to the player (within 2 cells)
+	var hovered_col: int = int(mouse_pos.x / CELL_SIZE)
+	var hovered_row: int = int(mouse_pos.y / CELL_SIZE)
 	var player_col: int = int(explorer.position.x / CELL_SIZE)
 	var player_row: int = int(explorer.position.y / CELL_SIZE)
-	var col_dist: int = abs(target_col - player_col)
-	var row_dist: int = abs(target_row - player_row)
+	var in_range: bool = abs(hovered_col - player_col) <= 2 and abs(hovered_row - player_row) <= 2
+	var can_mine: bool = in_range and terrain.is_mineable(hovered_row, hovered_col)
 	
-	if col_dist > 2 or row_dist > 2:
-		return  # too far away
-	
-	# check if the cell is mineable
-	if not terrain.is_mineable(target_row, target_col):
+	if Input.is_action_pressed("mine") and can_mine:
+		# if we switched target tile, reset progress
+		if hovered_row != mining_row or hovered_col != mining_col:
+			mining_row = hovered_row
+			mining_col = hovered_col
+			mine_progress = 0.0
+		is_mining = true
+		# look up how long this cell type takes to break
+		var cell_type: int = terrain.grid[mining_row][mining_col]
+		var break_time: float = MINE_TIME.get(cell_type, 0.5)
+		mine_progress += delta / break_time
+		# update cursor arc to show progress
+		var tile_tl: Vector2 = Vector2(mining_col * CELL_SIZE, mining_row * CELL_SIZE)
+		mining_cursor.update_cursor(tile_tl, true, minf(mine_progress, 1.0))
+		# break tile when progress hits 1.0
+		if mine_progress >= 1.0:
+			_break_tile(mining_row, mining_col)
+			mine_progress = 0.0
+			is_mining = false
+	else:
+		# mouse released or no valid target — show highlight only, reset progress if switched
+		is_mining = false
+		mine_progress = 0.0
+		if can_mine:
+			var tile_tl: Vector2 = Vector2(hovered_col * CELL_SIZE, hovered_row * CELL_SIZE)
+			mining_cursor.update_cursor(tile_tl, true, 0.0)
+		else:
+			mining_cursor.update_cursor(Vector2.ZERO, false, 0.0)
+
+# this breaks a tile, spawns effects, and checks for echo shards
+func _break_tile(row: int, col: int) -> void:
+	if not terrain.is_mineable(row, col):
 		return
-	
-	# get the cell type for particle color before breaking
-	var cell_type: int = terrain.grid[target_row][target_col]
+	var cell_type: int = terrain.grid[row][col]
 	var block_color: Color = terrain.get_cell_color(cell_type)
+	var world_center: Vector2 = Vector2(col * CELL_SIZE + CELL_SIZE / 2, row * CELL_SIZE + CELL_SIZE / 2)
 	
-	# break the block
-	terrain.break_cell(target_row, target_col)
-	
-	# remove the visual/collision node
-	var cell_name: String = "Cell_" + str(target_row) + "_" + str(target_col)
+	# check if this tile hides an echo shard BEFORE freeing the node
+	var cell_name: String = "Cell_" + str(row) + "_" + str(col)
 	var cell_node: Node = terrain_visuals.get_node_or_null(cell_name)
+	var has_shard: bool = false
+	if cell_node and cell_node.has_meta("has_shard"):
+		has_shard = cell_node.get_meta("has_shard", false)
+	
+	# update grid and free the visual node
+	terrain.break_cell(row, col)
 	if cell_node:
 		cell_node.queue_free()
-	
-	# spawn mine particles
-	_spawn_mine_particles(
-		Vector2(target_col * CELL_SIZE + CELL_SIZE / 2, target_row * CELL_SIZE + CELL_SIZE / 2),
-		block_color
-	)
 	
 	# play mine sound
 	if explorer.mine_sound.stream:
 		explorer.mine_sound.play()
+	
+	# spawn colored particle dust burst
+	_spawn_mine_particles(world_center, block_color)
+	
+	# screen shake — small jolt on every break
+	shake_magnitude = 1.5
+	shake_timer = 0.15
+	
+	# shard reward if this was a shard tile
+	if has_shard:
+		collect_shard(world_center)
 
 # create particle effect when a block is broken
 func _spawn_mine_particles(world_position: Vector2, block_color: Color) -> void:
@@ -360,6 +428,7 @@ func _spawn_scene_enemy_in_range(scene: PackedScene, min_row: int, max_row: int)
 func update_hud() -> void:
 	hud.update_health(explorer.current_health, explorer.max_health)
 	hud.update_stones(explorer.sacred_stones_collected)
+	hud.update_shards(shards_collected, shards_needed)
 
 # show message telling player to return to surface
 func show_return_message() -> void:
@@ -367,30 +436,124 @@ func show_return_message() -> void:
 	return_message_shown = true
 	hud.show_message("All stones collected! Return to the surface!")
 
-# show the death screen
+# show the death screen — transitions to end_screen.tscn with metadata
 func show_death_screen() -> void:
 	var depth: int = int(explorer.max_depth_reached - terrain.SURFACE_ROW)
 	if depth < 0:
 		depth = 0
-	hud.show_message(
-		"You fell to the depths...\n" +
-		"Depth reached: " + str(depth) + " blocks\n" +
-		"Press R to restart"
-	)
+	trigger_death_screen(shards_collected, depth)
 
-# handle the win condition
+# trigger_death_screen — store data in tree metadata and change scene
+func trigger_death_screen(shards: int, depth: int) -> void:
+	get_tree().set_meta("end_won", false)
+	get_tree().set_meta("end_shards", shards)
+	get_tree().set_meta("end_depth", depth)
+	get_tree().change_scene_to_file("res://scenes/end_screen.tscn")
+
+# handle the win condition — transition to end_screen.tscn
 func _win_game() -> void:
 	game_won = true
 	var depth: int = int(explorer.max_depth_reached - terrain.SURFACE_ROW)
 	if depth < 0:
 		depth = 0
-	var time_seconds: int = int(game_timer)
-	# play win sound
 	if win_sound.stream:
 		win_sound.play()
-	hud.show_message(
-		"You uncovered the Heart of the Mountain!\n" +
-		"Depth reached: " + str(depth) + " blocks\n" +
-		"Time: " + str(time_seconds) + " seconds\n" +
-		"Press R to play again"
-	)
+	trigger_win_screen(shards_collected, depth)
+
+# trigger_win_screen — store data in tree metadata and change scene
+func trigger_win_screen(shards: int, depth: int) -> void:
+	get_tree().set_meta("end_won", true)
+	get_tree().set_meta("end_shards", shards)
+	get_tree().set_meta("end_depth", depth)
+	get_tree().change_scene_to_file("res://scenes/end_screen.tscn")
+
+# ─── ECHO SHARD SYSTEM ────────────────────────────────────────────────────────
+
+# mark exactly 15 solid tiles as shard tiles, distributed by depth layer
+# we do this after _draw_terrain() so the StaticBody2D nodes already exist
+func _place_echo_shards() -> void:
+	# depth band definitions: [min_row, max_row, shard_count]
+	var bands: Array = [
+		[terrain.SURFACE_ROW,      terrain.DIRT_END - 1,    3],
+		[terrain.DIRT_END,         terrain.STONE_END - 1,   4],
+		[terrain.STONE_END,        terrain.OBSIDIAN_END - 1, 5],
+		[terrain.OBSIDIAN_END,     terrain.WORLD_HEIGHT - 2, 3],
+	]
+	for band: Array in bands:
+		var min_row: int = band[0]
+		var max_row: int = band[1]
+		var count: int   = band[2]
+		var placed: int  = 0
+		var attempts: int = 0
+		while placed < count and attempts < 400:
+			attempts += 1
+			var row: int = randi_range(min_row, max_row)
+			var col: int = randi_range(1, terrain.WORLD_WIDTH - 2)
+			# must be a solid mineable tile
+			if not terrain.is_mineable(row, col):
+				continue
+			var cell_name: String = "Cell_" + str(row) + "_" + str(col)
+			var cell_node: StaticBody2D = terrain_visuals.get_node_or_null(cell_name)
+			if cell_node == null:
+				continue
+			# skip if already tagged
+			if cell_node.has_meta("has_shard"):
+				continue
+			# tag the tile
+			cell_node.set_meta("has_shard", true)
+			# add subtle cyan PointLight2D glow so it appears identical but glows softly
+			var glow: PointLight2D = PointLight2D.new()
+			glow.color = Color(0.0, 1.0, 1.0, 1.0)  # cyan #00FFFF
+			glow.energy = 0.4
+			glow.texture = _create_light_texture()
+			glow.texture_scale = 0.8
+			cell_node.add_child(glow)
+			placed += 1
+
+# create a simple radial gradient texture for the PointLight2D
+func _create_light_texture() -> GradientTexture2D:
+	var grad: Gradient = Gradient.new()
+	grad.set_color(0, Color(1, 1, 1, 1))
+	grad.set_color(1, Color(1, 1, 1, 0))
+	var tex: GradientTexture2D = GradientTexture2D.new()
+	tex.gradient = grad
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to  = Vector2(1.0, 0.5)
+	tex.width  = 64
+	tex.height = 64
+	return tex
+
+# called when a shard tile is broken — updates counter and checks win
+func collect_shard(world_pos: Vector2) -> void:
+	shards_collected += 1
+	hud.update_shards(shards_collected, shards_needed)
+	_show_shard_pickup_effect(world_pos)
+	# check if player has enough shards to win
+	if shards_collected >= shards_needed:
+		trigger_win_screen(shards_collected, int(explorer.max_depth_reached - terrain.SURFACE_ROW))
+
+# show a white flash + rising "+1 ECHO SHARD" floating text at the tile position
+func _show_shard_pickup_effect(world_pos: Vector2) -> void:
+	# brief white flash rectangle that fades out
+	var flash: ColorRect = ColorRect.new()
+	flash.size = Vector2(CELL_SIZE, CELL_SIZE)
+	flash.position = world_pos - Vector2(CELL_SIZE / 2, CELL_SIZE / 2)
+	flash.color = Color(1.0, 1.0, 1.0, 0.85)
+	add_child(flash)
+	var fade: Tween = create_tween()
+	fade.tween_property(flash, "modulate:a", 0.0, 0.25)
+	fade.tween_callback(flash.queue_free)
+	
+	# floating "+1 ECHO SHARD" text that rises and fades over 1 second
+	var label: Label = Label.new()
+	label.text = "+1 ECHO SHARD"
+	label.position = world_pos - Vector2(50, 10)
+	label.add_theme_color_override("font_color", Color(0.0, 1.0, 1.0))
+	label.add_theme_font_size_override("font_size", 14)
+	add_child(label)
+	var rise: Tween = create_tween()
+	rise.tween_property(label, "position:y", label.position.y - 50.0, 1.0)
+	rise.parallel().tween_property(label, "modulate:a", 0.0, 1.0)
+	rise.tween_callback(label.queue_free)
+

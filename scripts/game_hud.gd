@@ -14,6 +14,7 @@ var pulse_state: bool = false
 # other HUD references
 var depth_label: Label = null
 var stone_label: Label = null
+var shard_label: Label = null
 var message_label: Label = null
 var depth_bar: ColorRect = null
 var depth_bar_fill: ColorRect = null
@@ -25,6 +26,7 @@ func _ready() -> void:
 	# build the HUD layout
 	_create_vitals_bar()
 	_create_stone_counter()
+	_create_shard_counter()
 	_create_depth_label()
 	_create_depth_bar()
 	_create_message_display()
@@ -76,10 +78,19 @@ func _create_stone_counter() -> void:
 	stone_label.text = "Sacred Stones: 0/7"
 	add_child(stone_label)
 
+# create the echo shard counter below the stone counter
+func _create_shard_counter() -> void:
+	shard_label = Label.new()
+	shard_label.position = Vector2(16, 76)
+	shard_label.add_theme_color_override("font_color", Color(0.0, 1.0, 1.0))
+	shard_label.add_theme_font_size_override("font_size", 16)
+	shard_label.text = "Echo Shards: 0/10"
+	add_child(shard_label)
+
 # create the depth counter text
 func _create_depth_label() -> void:
 	depth_label = Label.new()
-	depth_label.position = Vector2(16, 78)
+	depth_label.position = Vector2(16, 100)
 	depth_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.85))
 	depth_label.add_theme_font_size_override("font_size", 16)
 	depth_label.text = "Depth: 0 blocks"
@@ -132,6 +143,11 @@ func update_health(current_hp: int, max_hp: int = 100) -> void:
 # update the sacred stone counter
 func update_stones(collected: int) -> void:
 	stone_label.text = "Sacred Stones: " + str(collected) + "/7"
+
+# update the echo shard counter
+func update_shards(collected: int, needed: int) -> void:
+	if shard_label != null:
+		shard_label.text = "Echo Shards: " + str(collected) + "/" + str(needed)
 
 # update the depth display and bar
 func update_depth(current_depth: float) -> void:
