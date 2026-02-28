@@ -9,6 +9,7 @@ const COLORS = [
 
 var title_letters: Array[Label] = []
 var torch_lights: Array[PointLight2D] = []
+var flickering_subtitle: Label = null
 
 func _ready() -> void:
 	_build_background()
@@ -103,9 +104,9 @@ func _build_animated_title() -> void:
 		title_letters.append(letter)
 		add_child(letter)
 		
-		# Animate letter falling into place
+		# Animate letter falling into place with delay
 		var tween = create_tween()
-		await get_tree().create_timer(i * 0.09).timeout
+		tween.tween_delay(i * 0.09)
 		tween.tween_property(letter, "position:y", 180, 0.6)
 		tween.set_trans(Tween.TRANS_BACK)  
 		tween.set_ease(Tween.EASE_OUT)
@@ -143,12 +144,16 @@ func _build_subtitles() -> void:
 	
 	# Flicker effect for subtitle2
 	var flicker_tween = create_tween()
-	flicker_tween.set_loops()
-	flicker_tween.tween_method(_flicker_subtitle.bind(subtitle2), 0.0, 6.28, 2.0)
+	flicker_tween.set_loops(-1)  # Infinite loops
+	flicker_tween.tween_method(_flicker_subtitle_animation, 0.0, 6.28, 2.0)
+	
+	# Store reference for the animation
+	flickering_subtitle = subtitle2
 
-func _flicker_subtitle(subtitle: Label, value: float) -> void:
-	var alpha = 0.7 + sin(value) * 0.3
-	subtitle.modulate.a = alpha
+func _flicker_subtitle_animation(value: float) -> void:
+	if flickering_subtitle:
+		var alpha = 0.7 + sin(value) * 0.3
+		flickering_subtitle.modulate.a = alpha
 
 # begin descent and quit buttons with hover effects
 func _build_buttons() -> void:
