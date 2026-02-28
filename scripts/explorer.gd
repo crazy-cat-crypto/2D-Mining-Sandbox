@@ -14,6 +14,11 @@ var attack_range: float = 65.0
 var attack_cooldown: float = 0.35
 var can_attack: bool = true
 
+# gun system
+var can_shoot: bool = true
+const SHOOT_COOLDOWN: float = 0.35
+var bullet_script: GDScript = preload("res://scripts/bullet.gd")
+
 # health system
 const MAX_HEALTH: int = 100
 var current_health: int = MAX_HEALTH
@@ -49,6 +54,10 @@ func _ready() -> void:
 	var collision: CollisionShape2D = $CollisionShape
 	collision.shape = RectangleShape2D.new()
 	collision.shape.size = Vector2(16, 26)
+	# Spawn protection — 5 seconds of invincibility
+	is_invincible = true
+	invincibility_timer = 5.0
+	flash_timer = 0.12
 
 # create the child character appearance using ColorRects
 func _create_child_visuals() -> void:
@@ -136,7 +145,7 @@ func _create_child_visuals() -> void:
 	arm_l.color = Color("#F4C58A")
 	visual_node.add_child(arm_l)
 	
-	# Right arm (with pickaxe)
+	# Right arm (with gun)
 	var arm_r = Node2D.new()
 	arm_r.name = "arm_r"
 	arm_r.position = Vector2(7, -11)
@@ -149,13 +158,29 @@ func _create_child_visuals() -> void:
 	arm_skin.color = Color("#F4C58A")
 	arm_r.add_child(arm_skin)
 	
-	var pickaxe = ColorRect.new()
-	pickaxe.name = "pickaxe"
-	pickaxe.size = Vector2(16, 3)
-	pickaxe.position = Vector2(2, 6)
-	pickaxe.color = Color("#888888")
-	pickaxe.rotation_degrees = -40
-	arm_r.add_child(pickaxe)
+	# Gun handle
+	var gun_handle = ColorRect.new()
+	gun_handle.name = "gun_handle"
+	gun_handle.size = Vector2(5, 7)
+	gun_handle.position = Vector2(1, 4)
+	gun_handle.color = Color("#4A3728")
+	arm_r.add_child(gun_handle)
+	
+	# Gun body
+	var gun_body = ColorRect.new()
+	gun_body.name = "gun_body"
+	gun_body.size = Vector2(14, 4)
+	gun_body.position = Vector2(1, 2)
+	gun_body.color = Color("#555555")
+	arm_r.add_child(gun_body)
+	
+	# Gun barrel
+	var gun_barrel = ColorRect.new()
+	gun_barrel.name = "gun_barrel"
+	gun_barrel.size = Vector2(6, 3)
+	gun_barrel.position = Vector2(15, 2)
+	gun_barrel.color = Color("#333333")
+	arm_r.add_child(gun_barrel)
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
@@ -239,6 +264,8 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			_try_attack_or_mine()
+		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			_shoot()
 
 func _try_attack_or_mine() -> void:
 	# Check if any enemy is in melee range first
@@ -262,6 +289,44 @@ func _swing_pickaxe() -> void:
 	tween.tween_property(arm_r, "rotation_degrees", -40.0, 0.15)
 	await get_tree().create_timer(attack_cooldown).timeout
 	can_attack = true
+
+# shoot a bullet toward the mouse cursor (right-click)
+func _shoot() -> void:
+	if is_dead or not can_shoot:
+		return
+	can_shoot = false
+	
+	# create bullet
+	var bullet = Area2D.new()
+	bullet.set_script(bullet_script)
+	var mouse_pos = get_global_mouse_position()
+	bullet.position = global_position
+	get_tree().current_scene.add_child(bullet)
+	
+	# set direction toward mouse
+	var dir = (mouse_pos - global_position).normalized()
+	bullet.direction = dir
+	bullet.rotation = dir.angle()
+	
+	# gun recoil animation
+	var arm_r = visual_node.get_node("arm_r")
+	var tween = create_tween()
+	tween.tween_property(arm_r, "rotation_degrees", -15.0, 0.05)
+	tween.tween_property(arm_r, "rotation_degrees", 0.0, 0.1)
+	
+	# spawn muzzle flash
+	var flash = ColorRect.new()
+	flash.size = Vector2(6, 6)
+	flash.position = global_position + dir * 16 - Vector2(3, 3)
+	flash.color = Color("#FFFF00")
+	get_tree().current_scene.add_child(flash)
+	var flash_tween = create_tween()
+	flash_tween.tween_property(flash, "modulate:a", 0.0, 0.1)
+	flash_tween.tween_callback(flash.queue_free)
+	
+	# cooldown
+	await get_tree().create_timer(SHOOT_COOLDOWN).timeout
+	can_shoot = true
 
 # take_damage — used for environmental hazards  
 func take_damage(amount: int) -> void:

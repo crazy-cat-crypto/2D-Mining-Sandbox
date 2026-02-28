@@ -110,8 +110,8 @@ func _on_body_entered(body: Node2D) -> void:
 			_die()
 			body.velocity.y = -200.0
 		else:
-			# naga deals 2 damage (1.5 hearts rounds up)
-			body.take_damage(2)
+			# naga deals damage
+			body.take_damage(15)
 
 # take damage from player attack
 func take_hit(dmg: int) -> void:

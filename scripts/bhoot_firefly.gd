@@ -98,7 +98,7 @@ func _on_body_entered(body: Node2D) -> void:
 			_die()
 			body.velocity.y = -150.0
 		else:
-			body.take_damage(1)
+			body.take_damage(10)
 
 # take damage from player attack
 func take_hit(dmg: int) -> void:

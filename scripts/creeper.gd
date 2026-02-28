@@ -144,7 +144,7 @@ func _explode() -> void:
 	is_dead = true
 	var player = get_tree().get_first_node_in_group("player")
 	if player and global_position.distance_to(player.global_position) < explode_range:
-		player.die()
+		player.take_damage(40)
 	
 	# Screen flash
 	var flash = ColorRect.new()
@@ -171,4 +171,4 @@ func take_hit(dmg: int) -> void:
 
 func _on_body_entered(body: Node2D) -> void:
 	if body.is_in_group("player"):
-		body.die()
+		body.take_damage(15)

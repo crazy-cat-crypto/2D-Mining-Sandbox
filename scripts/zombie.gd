@@ -166,4 +166,4 @@ func _die() -> void:
 
 func _on_body_entered(body: Node2D) -> void:
 	if body.is_in_group("player"):
-		body.die()
+		body.take_damage(20)
